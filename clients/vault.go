@@ -32,7 +32,7 @@ func (c *VaultClient) Authenticate(role string) *VaultClient {
 	tokenB, err := ioutil.ReadFile(tokenPath)
 	token := string(tokenB)
 
-	req := c.NewRequest("POST", "auth/kubernetes/login")
+	req := c.NewRequest("POST", "v1/auth/kubernetes/login")
 
 	reqBody := gabs.New()
 	reqBody.Set(token, "jwt")
