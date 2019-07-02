@@ -1,11 +1,12 @@
 package clients
 
 import (
+	"bytes"
 	"io/ioutil"
+	"net/http"
 
 	"github.com/Jeffail/gabs"
 	api "github.com/hashicorp/vault/api"
-	logical "github.com/hashicorp/vault/sdk/logical"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -32,27 +33,33 @@ func (c *VaultClient) Authenticate(role string) *VaultClient {
 	tokenB, err := ioutil.ReadFile(tokenPath)
 	token := string(tokenB)
 
-	req := c.NewRequest("POST", "v1/auth/kubernetes/login")
-
 	reqBody := gabs.New()
 	reqBody.Set(token, "jwt")
 	reqBody.Set(role, "role")
 
-	req.SetJSONBody(reqBody)
-	res, err := c.RawRequest(req)
+	res, err := http.Post(c.Address()+"/v1/auth/kubernetes/login", "application/json", bytes.NewBuffer(reqBody.Bytes()))
 
 	if err != nil {
-		log.Panicln("Error authenticating with Vault server via Kubernetes Service Account", err)
+		log.Panicln("Error authenticating with Vault server via Kubernetes Service Account", err, res, reqBody)
 	}
 
-	resp := logical.Response{}
-	err = res.DecodeJSON(&resp)
-
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		log.Panicln("Error decoding response from Vault server when authenticating via Kubernetes Service Account", err)
+		log.Panicln("Error reading response from server while authenticating with Vault server via Kubernetes Service Account", err, reqBody)
 	}
 
-	c.SetToken(resp.Auth.ClientToken)
+	resJSON, err := gabs.ParseJSON(body)
+	if err != nil {
+		log.Panicln("Error parsing JSON response from Vault server when authenticating via Kubernetes Service Account", err, string(body))
+	}
+
+	clientToken, ok := resJSON.Path("auth.client_token").Data().(string)
+	if ok != true {
+		log.Panicln("Error traversing JSON response from Vault server when authenticating via Kubernetes Service Account", string(body))
+	}
+
+	log.Debugln("Logged in with token", clientToken)
+	c.SetToken(clientToken)
 
 	return c
 }
